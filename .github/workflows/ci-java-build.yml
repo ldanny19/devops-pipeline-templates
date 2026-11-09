@@ -19,7 +19,7 @@ on:
         required: true
         type: string
       artifact_file:
-        description: 'JAR relativo al modulo; vacio para deteccion automatica'
+        description: 'Ruta relativa al modulo para seleccionar el JAR principal; vacio para deteccion automatica'
         required: false
         type: string
         default: ''
@@ -28,14 +28,28 @@ on:
         required: false
         type: boolean
         default: true
+    outputs:
+      artifact_file_name:
+        description: 'Nombre original del JAR generado por Maven o Gradle'
+        value: ${{ jobs.build.outputs.artifact_file_name }}
+      artifact_directory:
+        description: 'Directorio nativo relativo al modulo: target o build/libs'
+        value: ${{ jobs.build.outputs.artifact_directory }}
+      artifact_path:
+        description: 'Ruta relativa al modulo, conservando nombre y directorio originales'
+        value: ${{ jobs.build.outputs.artifact_path }}
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Compilar, probar y empaquetar
+    name: Compilar, probar y publicar artefacto
     runs-on: ubuntu-24.04
+    outputs:
+      artifact_file_name: ${{ steps.artifact.outputs.artifact_file_name }}
+      artifact_directory: ${{ steps.artifact.outputs.artifact_directory }}
+      artifact_path: ${{ steps.artifact.outputs.artifact_path }}
     steps:
       - name: Descargar codigo
         uses: actions/checkout@v4
@@ -75,8 +89,9 @@ jobs:
               ;;
           esac
 
-      - name: Preparar artefacto JAR en carpeta por defecto
+      - name: Identificar JAR principal sin renombrarlo
         if: ${{ inputs.publish_artifact }}
+        id: artifact
         shell: bash
         env:
           MODULE: ${{ inputs.working_directory }}
@@ -86,15 +101,13 @@ jobs:
           set -euo pipefail
 
           case "$BUILD_TOOL" in
-            maven) OUTPUT_DIR="$MODULE/target" ;;
-            gradle) OUTPUT_DIR="$MODULE/build/libs" ;;
+            maven) OUTPUT_DIR="target" ;;
+            gradle) OUTPUT_DIR="build/libs" ;;
             *)
               echo "::error::Herramienta no soportada: $BUILD_TOOL"
               exit 1
               ;;
           esac
-
-          mkdir -p "$OUTPUT_DIR"
 
           if [[ -n "$ARTIFACT_FILE" ]]; then
             if [[ "$ARTIFACT_FILE" = /* || "$ARTIFACT_FILE" == *".."* ]]; then
@@ -106,33 +119,42 @@ jobs:
               echo "::error::No existe el artefacto indicado: $SOURCE"
               exit 1
             }
+            RELATIVE_PATH="$ARTIFACT_FILE"
+            RELATIVE_DIRECTORY="$(dirname "$RELATIVE_PATH")"
           else
             JARS=()
             while IFS= read -r -d '' FILE; do
-              [[ "$FILE" == "$OUTPUT_DIR/paquete-api.jar" ]] && continue
               JARS+=("$FILE")
-            done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -name '*.jar' \
+            done < <(find "$MODULE/$OUTPUT_DIR" -maxdepth 1 -type f -name '*.jar' \
               ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
-              ! -name 'original-*' ! -name 'paquete-api.jar' -print0)
+              ! -name '*-tests.jar' ! -name '*-plain.jar' \
+              ! -name 'original-*' -print0)
 
             if [[ "${#JARS[@]}" -ne 1 ]]; then
-              echo "::error::Se esperaba exactamente un JAR principal en $OUTPUT_DIR y se encontraron ${#JARS[@]}. Configure artifact_file."
+              echo "::error::Se esperaba exactamente un JAR principal en $MODULE/$OUTPUT_DIR y se encontraron ${#JARS[@]}. Configure artifact_file para seleccionar el artefacto correcto."
               printf '%s\\n' "${JARS[@]}"
               exit 1
             fi
             SOURCE="${JARS[0]}"
+            RELATIVE_PATH="$OUTPUT_DIR/$(basename "$SOURCE")"
+            RELATIVE_DIRECTORY="$OUTPUT_DIR"
           fi
 
-          if [[ "$SOURCE" != "$OUTPUT_DIR/paquete-api.jar" ]]; then
-            cp "$SOURCE" "$OUTPUT_DIR/paquete-api.jar"
-          fi
-          echo "Artefacto preparado: $OUTPUT_DIR/paquete-api.jar"
+          [[ -s "$SOURCE" ]] || {
+            echo "::error::El JAR seleccionado esta vacio: $SOURCE"
+            exit 1
+          }
 
-      - name: Publicar artefacto
+          echo "artifact_file_name=$(basename "$SOURCE")" >> "$GITHUB_OUTPUT"
+          echo "artifact_directory=$RELATIVE_DIRECTORY" >> "$GITHUB_OUTPUT"
+          echo "artifact_path=$RELATIVE_PATH" >> "$GITHUB_OUTPUT"
+          echo "JAR identificado: $RELATIVE_PATH"
+
+      - name: Publicar JAR conservando nombre y estructura
         if: ${{ inputs.publish_artifact }}
         uses: actions/upload-artifact@v4
         with:
-          name: paquete-api
-          path: ${{ inputs.working_directory }}/${{ inputs.build_tool == 'maven' && 'target' || 'build/libs' }}/paquete-api.jar
+          name: java-build-artifact
+          path: ${{ inputs.working_directory }}/${{ steps.artifact.outputs.artifact_path }}
           if-no-files-found: error
           retention-days: 7
