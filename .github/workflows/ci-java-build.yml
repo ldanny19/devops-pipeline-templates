@@ -1,4 +1,3 @@
-
 name: CI JAVA BUILD
 
 on:
@@ -19,14 +18,24 @@ on:
       working_directory:
         required: true
         type: string
+      artifact_file:
+        description: 'JAR relativo al modulo; vacio para deteccion automatica'
+        required: false
+        type: string
+        default: ''
+      publish_artifact:
+        description: 'Publicar el artefacto generado'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Compilar, probar y empaquetar
     runs-on: ubuntu-24.04
-
     steps:
       - name: Descargar codigo
         uses: actions/checkout@v4
@@ -39,52 +48,77 @@ jobs:
           cache: ${{ inputs.build_tool }}
 
       - name: Configurar Maven
-        if: inputs.build_tool == 'maven'
+        if: ${{ inputs.build_tool == 'maven' }}
         uses: stCarolas/setup-maven@v5.1
         with:
           maven-version: ${{ inputs.build_tool_version }}
 
       - name: Configurar Gradle
-        if: inputs.build_tool == 'gradle'
+        if: ${{ inputs.build_tool == 'gradle' }}
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ inputs.build_tool_version }}
 
       - name: Compilar y ejecutar pruebas
         working-directory: ${{ inputs.working_directory }}
         shell: bash
+        env:
+          BUILD_TOOL: ${{ inputs.build_tool }}
         run: |
           set -euo pipefail
-
-          case "${{ inputs.build_tool }}" in
-            maven)
-              mvn -B clean verify
-              ;;
-            gradle)
-              gradle clean build
+          case "$BUILD_TOOL" in
+            maven) mvn -B --no-transfer-progress clean verify ;;
+            gradle) gradle clean build --no-daemon ;;
+            *)
+              echo "::error::Herramienta no soportada: $BUILD_TOOL"
+              exit 1
               ;;
           esac
 
       - name: Preparar artefacto JAR
-        id: artifact
-        working-directory: ${{ inputs.working_directory }}
+        if: ${{ inputs.publish_artifact }}
         shell: bash
+        env:
+          MODULE: ${{ inputs.working_directory }}
+          ARTIFACT_FILE: ${{ inputs.artifact_file }}
         run: |
           set -euo pipefail
+          mkdir -p "$MODULE/dist"
 
-          mkdir -p dist
-
-          find target build/libs -maxdepth 1 -type f \
-            -name '*.jar' 2>/dev/null | head -n 1 > /tmp/jar_path || true
-
-          JAR_PATH="$(cat /tmp/jar_path)"
-
-          if [ -z "$JAR_PATH" ]; then
-            echo "::error::No se encontro el JAR"
-            exit 1
+          if [[ -n "$ARTIFACT_FILE" ]]; then
+            if [[ "$ARTIFACT_FILE" = /* || "$ARTIFACT_FILE" == *".."* ]]; then
+              echo "::error::artifact_file debe ser una ruta relativa dentro del modulo."
+              exit 1
+            fi
+            SOURCE="$MODULE/$ARTIFACT_FILE"
+            [[ -f "$SOURCE" ]] || {
+              echo "::error::No existe el artefacto indicado: $SOURCE"
+              exit 1
+            }
+          else
+            JARS=()
+            for OUTPUT_DIR in "$MODULE/target" "$MODULE/build/libs"; do
+              if [[ -d "$OUTPUT_DIR" ]]; then
+                while IFS= read -r -d '' FILE; do
+                  JARS+=("$FILE")
+                done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -name '*.jar' \
+                  ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
+                  ! -name 'original-*' -print0)
+              fi
+            done
+            if [[ "${#JARS[@]}" -ne 1 ]]; then
+              echo "::error::Se esperaba exactamente un JAR principal y se encontraron ${#JARS[@]}. Configure artifact_file."
+              printf '%s\n' "${JARS[@]}"
+              exit 1
+            fi
+            SOURCE="${JARS[0]}"
           fi
 
-          cp "$JAR_PATH" dist/paquete-api.jar
+          cp "$SOURCE" "$MODULE/dist/paquete-api.jar"
+          echo "Artefacto preparado: $MODULE/dist/paquete-api.jar"
 
       - name: Publicar artefacto
+        if: ${{ inputs.publish_artifact }}
         uses: actions/upload-artifact@v4
         with:
           name: paquete-api
