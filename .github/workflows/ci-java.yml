@@ -1,4 +1,3 @@
-
 name: CI JAVA
 
 on:
@@ -20,25 +19,69 @@ on:
         required: true
         type: string
       execute_build:
+        description: 'Ejecutar compilacion y pruebas'
         required: false
         type: boolean
         default: true
       execute_docker:
+        description: 'Construir y publicar imagen Docker'
         required: false
         type: boolean
         default: false
       docker_image:
+        description: 'Nombre de imagen GHCR sin registry ni owner'
         required: false
         type: string
         default: ''
+      artifact_file:
+        description: 'JAR relativo al modulo; vacio para deteccion automatica'
+        required: false
+        type: string
+        default: ''
+      publish_artifact:
+        description: 'Publicar el artefacto generado'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      image:
+        description: 'Referencia inmutable de la imagen publicada'
+        value: ${{ jobs.docker.outputs.image }}
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
+  validate:
+    name: Validar opciones del pipeline
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validar combinacion de etapas
+        shell: bash
+        env:
+          EXECUTE_BUILD: ${{ inputs.execute_build }}
+          EXECUTE_DOCKER: ${{ inputs.execute_docker }}
+          PUBLISH_ARTIFACT: ${{ inputs.publish_artifact }}
+          DOCKER_IMAGE: ${{ inputs.docker_image }}
+        run: |
+          set -euo pipefail
+          if [[ "$EXECUTE_DOCKER" == "true" && "$EXECUTE_BUILD" != "true" ]]; then
+            echo "::error::Docker requiere ejecutar CI JAVA BUILD."
+            exit 1
+          fi
+          if [[ "$EXECUTE_DOCKER" == "true" && "$PUBLISH_ARTIFACT" != "true" ]]; then
+            echo "::error::Docker requiere publicar el artefacto generado por BUILD."
+            exit 1
+          fi
+          if [[ "$EXECUTE_DOCKER" == "true" && -z "$DOCKER_IMAGE" ]]; then
+            echo "::error::docker_image es obligatorio cuando execute_docker=true."
+            exit 1
+          fi
+
   test:
-    uses: ./.github/workflows/ci-java-test.yml
+    name: CI JAVA TEST
+    needs: validate
+    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-java-test.yml@main
     with:
       java_version: ${{ inputs.java_version }}
       java_distribution: ${{ inputs.java_distribution }}
@@ -47,20 +90,29 @@ jobs:
       working_directory: ${{ inputs.working_directory }}
 
   build:
+    name: CI JAVA BUILD
     if: ${{ inputs.execute_build }}
     needs: test
-    uses: ./.github/workflows/ci-java-build.yml
+    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-java-build.yml@main
     with:
       java_version: ${{ inputs.java_version }}
       java_distribution: ${{ inputs.java_distribution }}
       build_tool: ${{ inputs.build_tool }}
       build_tool_version: ${{ inputs.build_tool_version }}
       working_directory: ${{ inputs.working_directory }}
+      artifact_file: ${{ inputs.artifact_file }}
+      publish_artifact: ${{ inputs.publish_artifact }}
 
   docker:
+    name: CI DOCKER
     if: ${{ inputs.execute_docker }}
-    needs: build
-    uses: ./.github/workflows/ci-docker.yml
+    needs:
+      - validate
+      - build
+    permissions:
+      contents: read
+      packages: write
+    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-docker.yml@main
     with:
       working_directory: ${{ inputs.working_directory }}
       docker_image: ${{ inputs.docker_image }}
