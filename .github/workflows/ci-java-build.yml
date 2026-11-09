@@ -75,15 +75,26 @@ jobs:
               ;;
           esac
 
-      - name: Preparar artefacto JAR
+      - name: Preparar artefacto JAR en carpeta por defecto
         if: ${{ inputs.publish_artifact }}
         shell: bash
         env:
           MODULE: ${{ inputs.working_directory }}
+          BUILD_TOOL: ${{ inputs.build_tool }}
           ARTIFACT_FILE: ${{ inputs.artifact_file }}
         run: |
           set -euo pipefail
-          mkdir -p "$MODULE/dist"
+
+          case "$BUILD_TOOL" in
+            maven) OUTPUT_DIR="$MODULE/target" ;;
+            gradle) OUTPUT_DIR="$MODULE/build/libs" ;;
+            *)
+              echo "::error::Herramienta no soportada: $BUILD_TOOL"
+              exit 1
+              ;;
+          esac
+
+          mkdir -p "$OUTPUT_DIR"
 
           if [[ -n "$ARTIFACT_FILE" ]]; then
             if [[ "$ARTIFACT_FILE" = /* || "$ARTIFACT_FILE" == *".."* ]]; then
@@ -97,31 +108,33 @@ jobs:
             }
           else
             JARS=()
-            for OUTPUT_DIR in "$MODULE/target" "$MODULE/build/libs"; do
-              if [[ -d "$OUTPUT_DIR" ]]; then
-                while IFS= read -r -d '' FILE; do
-                  JARS+=("$FILE")
-                done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -name '*.jar' \
-                  ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
-                  ! -name 'original-*' -print0)
-              fi
-            done
+            while IFS= read -r -d '' FILE; do
+              [[ "$FILE" == "$OUTPUT_DIR/paquete-api.jar" ]] && continue
+              JARS+=("$FILE")
+            done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -name '*.jar' \
+              ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
+              ! -name 'original-*' ! -name 'paquete-api.jar' -print0)
+
             if [[ "${#JARS[@]}" -ne 1 ]]; then
-              echo "::error::Se esperaba exactamente un JAR principal y se encontraron ${#JARS[@]}. Configure artifact_file."
-              printf '%s\n' "${JARS[@]}"
+              echo "::error::Se esperaba exactamente un JAR principal en $OUTPUT_DIR y se encontraron ${#JARS[@]}. Configure artifact_file."
+              printf '%s\\n' "${JARS[@]}"
               exit 1
             fi
             SOURCE="${JARS[0]}"
           fi
 
-          cp "$SOURCE" "$MODULE/dist/paquete-api.jar"
-          echo "Artefacto preparado: $MODULE/dist/paquete-api.jar"
+          if [[ "$SOURCE" != "$OUTPUT_DIR/paquete-api.jar" ]]; then
+            cp "$SOURCE" "$OUTPUT_DIR/paquete-api.jar"
+          fi
+          echo "Artefacto preparado: $OUTPUT_DIR/paquete-api.jar"
 
       - name: Publicar artefacto
         if: ${{ inputs.publish_artifact }}
         uses: actions/upload-artifact@v4
         with:
           name: paquete-api
-          path: ${{ inputs.working_directory }}/dist/paquete-api.jar
+          path: |
+            ${{ inputs.working_directory }}/target/paquete-api.jar
+            ${{ inputs.working_directory }}/build/libs/paquete-api.jar
           if-no-files-found: error
           retention-days: 7
