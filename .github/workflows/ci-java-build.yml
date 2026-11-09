@@ -1,0 +1,93 @@
+
+name: CI JAVA BUILD
+
+on:
+  workflow_call:
+    inputs:
+      java_version:
+        required: true
+        type: string
+      java_distribution:
+        required: true
+        type: string
+      build_tool:
+        required: true
+        type: string
+      build_tool_version:
+        required: true
+        type: string
+      working_directory:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ inputs.java_distribution }}
+          java-version: ${{ inputs.java_version }}
+          cache: ${{ inputs.build_tool }}
+
+      - name: Configurar Maven
+        if: inputs.build_tool == 'maven'
+        uses: stCarolas/setup-maven@v5.1
+        with:
+          maven-version: ${{ inputs.build_tool_version }}
+
+      - name: Configurar Gradle
+        if: inputs.build_tool == 'gradle'
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilar y ejecutar pruebas
+        working-directory: ${{ inputs.working_directory }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "${{ inputs.build_tool }}" in
+            maven)
+              mvn -B clean verify
+              ;;
+            gradle)
+              gradle clean build
+              ;;
+          esac
+
+      - name: Preparar artefacto JAR
+        id: artifact
+        working-directory: ${{ inputs.working_directory }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+
+          find target build/libs -maxdepth 1 -type f \
+            -name '*.jar' 2>/dev/null | head -n 1 > /tmp/jar_path || true
+
+          JAR_PATH="$(cat /tmp/jar_path)"
+
+          if [ -z "$JAR_PATH" ]; then
+            echo "::error::No se encontro el JAR"
+            exit 1
+          fi
+
+          cp "$JAR_PATH" dist/paquete-api.jar
+
+      - name: Publicar artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: paquete-api
+          path: ${{ inputs.working_directory }}/dist/paquete-api.jar
+          if-no-files-found: error
+          retention-days: 7

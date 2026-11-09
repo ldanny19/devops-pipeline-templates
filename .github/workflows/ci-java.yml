@@ -1,0 +1,67 @@
+
+name: CI JAVA
+
+on:
+  workflow_call:
+    inputs:
+      java_version:
+        required: true
+        type: string
+      java_distribution:
+        required: true
+        type: string
+      build_tool:
+        required: true
+        type: string
+      build_tool_version:
+        required: true
+        type: string
+      working_directory:
+        required: true
+        type: string
+      execute_build:
+        required: false
+        type: boolean
+        default: true
+      execute_docker:
+        required: false
+        type: boolean
+        default: false
+      docker_image:
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci-java-test.yml
+    with:
+      java_version: ${{ inputs.java_version }}
+      java_distribution: ${{ inputs.java_distribution }}
+      build_tool: ${{ inputs.build_tool }}
+      build_tool_version: ${{ inputs.build_tool_version }}
+      working_directory: ${{ inputs.working_directory }}
+
+  build:
+    if: ${{ inputs.execute_build }}
+    needs: test
+    uses: ./.github/workflows/ci-java-build.yml
+    with:
+      java_version: ${{ inputs.java_version }}
+      java_distribution: ${{ inputs.java_distribution }}
+      build_tool: ${{ inputs.build_tool }}
+      build_tool_version: ${{ inputs.build_tool_version }}
+      working_directory: ${{ inputs.working_directory }}
+
+  docker:
+    if: ${{ inputs.execute_docker }}
+    needs: build
+    uses: ./.github/workflows/ci-docker.yml
+    with:
+      working_directory: ${{ inputs.working_directory }}
+      docker_image: ${{ inputs.docker_image }}
+    secrets: inherit

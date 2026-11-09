@@ -1,0 +1,78 @@
+
+name: CD DEPLOY
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      docker_image:
+        required: true
+        type: string
+      deploy_path:
+        required: true
+        type: string
+    secrets:
+      SSH_PRIVATE_KEY:
+        required: true
+      SSH_HOST:
+        required: true
+      SSH_USER:
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Configurar SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Desplegar aplicacion
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_PATH: ${{ inputs.deploy_path }}
+          IMAGE: ${{ inputs.docker_image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh -o StrictHostKeyChecking=accept-new \
+            "$SSH_USER@$SSH_HOST" \
+            "mkdir -p '$DEPLOY_PATH'"
+
+          ssh -o StrictHostKeyChecking=accept-new \
+            "$SSH_USER@$SSH_HOST" \
+            "cd '$DEPLOY_PATH' && \
+             docker pull '$IMAGE' && \
+             docker compose up -d"
+
+      - name: Verificar despliegue
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_PATH: ${{ inputs.deploy_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh -o StrictHostKeyChecking=accept-new \
+            "$SSH_USER@$SSH_HOST" \
+            "cd '$DEPLOY_PATH' && docker compose ps"

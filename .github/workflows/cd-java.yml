@@ -1,0 +1,11 @@
+name: CI JAVA
+on: 
+  workflow_dispatch: 
+  push: 
+    branches: 
+      - develop
+      - main
+
+jobs:
+  
+  

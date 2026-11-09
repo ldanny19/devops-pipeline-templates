@@ -1,0 +1,95 @@
+
+name: CI JAVA TEST
+
+on:
+  workflow_call:
+    inputs:
+      java_version:
+        description: 'Version de Java'
+        required: true
+        type: string
+
+      java_distribution:
+        description: 'Distribucion de Java'
+        required: true
+        type: string
+
+      build_tool:
+        description: 'Herramienta de construccion: maven o gradle'
+        required: true
+        type: string
+
+      build_tool_version:
+        description: 'Version de Maven o Gradle'
+        required: true
+        type: string
+
+      working_directory:
+        description: 'Directorio del modulo Java'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Validacion y seguridad de dependencias
+    runs-on: ubuntu-24.04
+
+    steps:
+      # 1. Descargar codigo
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      # 2. Configurar Java
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ inputs.java_distribution }}
+          java-version: ${{ inputs.java_version }}
+
+      # 3. Validar estructura del proyecto
+      - name: Validar estructura del proyecto
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MODULE="${{ inputs.working_directory }}"
+          TOOL="${{ inputs.build_tool }}"
+
+          if [ ! -d "$MODULE" ]; then
+            echo "::error::No existe el directorio del modulo: $MODULE"
+            exit 1
+          fi
+
+          case "$TOOL" in
+            maven)
+              if [ ! -f "$MODULE/pom.xml" ]; then
+                echo "::error::No existe pom.xml"
+                exit 1
+              fi
+              ;;
+            gradle)
+              if [ ! -f "$MODULE/build.gradle" ] && \
+                 [ ! -f "$MODULE/build.gradle.kts" ]; then
+                echo "::error::No existe archivo de configuracion Gradle"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::Herramienta no soportada: $TOOL"
+              exit 1
+              ;;
+          esac
+
+      # 4. Analizar vulnerabilidades de dependencias
+      - name: Escanear dependencias con Trivy
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.working_directory }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
