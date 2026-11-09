@@ -43,6 +43,21 @@ on:
         required: false
         type: boolean
         default: true
+      docker_context:
+        description: 'Contexto Docker relativo a la raiz del repositorio'
+        required: false
+        type: string
+        default: '.'
+      dockerfile:
+        description: 'Dockerfile relativo a la raiz; vacio usa modulo/Dockerfile'
+        required: false
+        type: string
+        default: ''
+      image_tag:
+        description: 'Etiqueta de imagen; vacio usa el SHA del commit'
+        required: false
+        type: string
+        default: ''
     outputs:
       image:
         description: 'Referencia inmutable de la imagen publicada'
@@ -116,4 +131,7 @@ jobs:
     with:
       working_directory: ${{ inputs.working_directory }}
       docker_image: ${{ inputs.docker_image }}
+      docker_context: ${{ inputs.docker_context }}
+      dockerfile: ${{ inputs.dockerfile }}
+      image_tag: ${{ inputs.image_tag }}
     secrets: inherit
