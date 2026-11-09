@@ -11,6 +11,11 @@ on:
         description: 'Nombre de imagen GHCR sin registry ni owner'
         required: true
         type: string
+      build_tool:
+        description: 'Herramienta de construccion: maven o gradle'
+        required: false
+        type: string
+        default: 'maven'
       docker_context:
         description: 'Contexto de construccion relativo a la raiz del repositorio'
         required: false
@@ -49,13 +54,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: paquete-api
-          path: ${{ inputs.working_directory }}/dist
+          path: ${{ inputs.working_directory }}/${{ inputs.build_tool == 'maven' && 'target' || 'build/libs' }}
 
       - name: Validar contexto, Dockerfile y artefacto
         id: image
         shell: bash
         env:
           MODULE: ${{ inputs.working_directory }}
+          BUILD_TOOL: ${{ inputs.build_tool }}
           DOCKER_CONTEXT: ${{ inputs.docker_context }}
           DOCKERFILE_INPUT: ${{ inputs.dockerfile }}
           DOCKER_IMAGE: ${{ inputs.docker_image }}
@@ -66,6 +72,14 @@ jobs:
           if [[ -z "$DOCKERFILE" ]]; then
             DOCKERFILE="$MODULE/Dockerfile"
           fi
+          case "$BUILD_TOOL" in
+            maven) ARTIFACT="$MODULE/target/paquete-api.jar" ;;
+            gradle) ARTIFACT="$MODULE/build/libs/paquete-api.jar" ;;
+            *)
+              echo "::error::Herramienta no soportada: $BUILD_TOOL"
+              exit 1
+              ;;
+          esac
           [[ -d "$DOCKER_CONTEXT" ]] || {
             echo "::error::No existe el contexto Docker: $DOCKER_CONTEXT"
             exit 1
@@ -74,8 +88,8 @@ jobs:
             echo "::error::No existe el Dockerfile: $DOCKERFILE"
             exit 1
           }
-          [[ -s "$MODULE/dist/paquete-api.jar" ]] || {
-            echo "::error::No existe el JAR esperado en $MODULE/dist/paquete-api.jar"
+          [[ -s "$ARTIFACT" ]] || {
+            echo "::error::No existe el JAR esperado en $ARTIFACT"
             exit 1
           }
           if grep -Eiq '^[[:space:]]*RUN[[:space:]].*(mvn|gradle|mvnw|gradlew)' "$DOCKERFILE"; then
