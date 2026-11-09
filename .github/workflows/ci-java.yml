@@ -96,7 +96,7 @@ jobs:
   test:
     name: CI JAVA TEST
     needs: validate
-    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-java-test.yml@main
+    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-java-test.yml@2f199c9ce6ef9b04e0e8f2c72f21f8d258e6cb69
     with:
       java_version: ${{ inputs.java_version }}
       java_distribution: ${{ inputs.java_distribution }}
@@ -108,7 +108,7 @@ jobs:
     name: CI JAVA BUILD
     if: ${{ inputs.execute_build }}
     needs: test
-    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-java-build.yml@main
+    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-java-build.yml@2f199c9ce6ef9b04e0e8f2c72f21f8d258e6cb69
     with:
       java_version: ${{ inputs.java_version }}
       java_distribution: ${{ inputs.java_distribution }}
@@ -127,7 +127,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-docker.yml@main
+    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-docker.yml@2f199c9ce6ef9b04e0e8f2c72f21f8d258e6cb69
     with:
       working_directory: ${{ inputs.working_directory }}
       docker_image: ${{ inputs.docker_image }}
