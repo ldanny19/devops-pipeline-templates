@@ -11,11 +11,18 @@ on:
         description: 'Nombre de imagen GHCR sin registry ni owner'
         required: true
         type: string
-      build_tool:
-        description: 'Herramienta de construccion: maven o gradle'
-        required: false
+      artifact_file_name:
+        description: 'Nombre original del JAR generado en CI JAVA BUILD'
+        required: true
         type: string
-        default: 'maven'
+      artifact_directory:
+        description: 'Directorio nativo del JAR relativo al modulo'
+        required: true
+        type: string
+      artifact_path:
+        description: 'Ruta original del JAR relativa al modulo'
+        required: true
+        type: string
       docker_context:
         description: 'Contexto de construccion relativo a la raiz del repositorio'
         required: false
@@ -50,18 +57,19 @@ jobs:
       - name: Descargar codigo
         uses: actions/checkout@v4
 
-      - name: Descargar artefacto generado por CI JAVA BUILD
+      - name: Descargar JAR original de CI JAVA BUILD
         uses: actions/download-artifact@v4
         with:
-          name: paquete-api
-          path: ${{ inputs.working_directory }}/${{ inputs.build_tool == 'maven' && 'target' || 'build/libs' }}
+          name: java-build-artifact
+          path: ${{ inputs.working_directory }}/${{ inputs.artifact_directory }}
 
-      - name: Validar contexto, Dockerfile y artefacto
+      - name: Validar contexto, Dockerfile y JAR
         id: image
         shell: bash
         env:
           MODULE: ${{ inputs.working_directory }}
-          BUILD_TOOL: ${{ inputs.build_tool }}
+          ARTIFACT_FILE_NAME: ${{ inputs.artifact_file_name }}
+          ARTIFACT_PATH: ${{ inputs.artifact_path }}
           DOCKER_CONTEXT: ${{ inputs.docker_context }}
           DOCKERFILE_INPUT: ${{ inputs.dockerfile }}
           DOCKER_IMAGE: ${{ inputs.docker_image }}
@@ -72,14 +80,7 @@ jobs:
           if [[ -z "$DOCKERFILE" ]]; then
             DOCKERFILE="$MODULE/Dockerfile"
           fi
-          case "$BUILD_TOOL" in
-            maven) ARTIFACT="$MODULE/target/paquete-api.jar" ;;
-            gradle) ARTIFACT="$MODULE/build/libs/paquete-api.jar" ;;
-            *)
-              echo "::error::Herramienta no soportada: $BUILD_TOOL"
-              exit 1
-              ;;
-          esac
+
           [[ -d "$DOCKER_CONTEXT" ]] || {
             echo "::error::No existe el contexto Docker: $DOCKER_CONTEXT"
             exit 1
@@ -88,14 +89,37 @@ jobs:
             echo "::error::No existe el Dockerfile: $DOCKERFILE"
             exit 1
           }
+
+          if [[ "$ARTIFACT_PATH" = /* || "$ARTIFACT_PATH" == *".."* ]]; then
+            echo "::error::La ruta del artefacto debe ser relativa al modulo y segura."
+            exit 1
+          fi
+          ARTIFACT="$MODULE/$ARTIFACT_PATH"
           [[ -s "$ARTIFACT" ]] || {
-            echo "::error::No existe el JAR esperado en $ARTIFACT"
+            echo "::error::No se encontro el JAR original: $ARTIFACT"
             exit 1
           }
+          [[ "$(basename "$ARTIFACT")" == "$ARTIFACT_FILE_NAME" ]] || {
+            echo "::error::El nombre del JAR descargado no coincide con el output de BUILD."
+            exit 1
+          }
+
+          JAR_FILE="$(realpath --relative-to="$DOCKER_CONTEXT" "$ARTIFACT")"
+          if [[ "$JAR_FILE" == ../* || "$JAR_FILE" == ".." ]]; then
+            echo "::error::El JAR debe estar dentro del contexto Docker."
+            exit 1
+          fi
+
           if grep -Eiq '^[[:space:]]*RUN[[:space:]].*(mvn|gradle|mvnw|gradlew)' "$DOCKERFILE"; then
             echo "::error::El Dockerfile no debe compilar; debe incorporar el JAR generado por CI JAVA BUILD."
             exit 1
           fi
+          if ! grep -Eq '^[[:space:]]*ARG[[:space:]]+JAR_FILE([=[:space:]]|$)' "$DOCKERFILE" ||
+             ! grep -Eq '^[[:space:]]*COPY[[:space:]].*JAR_FILE' "$DOCKERFILE"; then
+            echo "::error::El Dockerfile debe declarar ARG JAR_FILE y utilizarlo en COPY para recibir el artefacto versionado."
+            exit 1
+          fi
+
           if [[ ! "$DOCKER_IMAGE" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
             echo "::error::docker_image debe contener solo caracteres validos en minusculas."
             exit 1
@@ -106,9 +130,12 @@ jobs:
             echo "::error::image_tag no es una etiqueta Docker valida."
             exit 1
           fi
+
           IMAGE="ghcr.io/${{ github.repository_owner }}/$DOCKER_IMAGE:$IMAGE_TAG"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "dockerfile=$DOCKERFILE" >> "$GITHUB_OUTPUT"
+          echo "jar_file=$JAR_FILE" >> "$GITHUB_OUTPUT"
+          echo "Docker recibira el JAR original: $JAR_FILE"
 
       - name: Configurar Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -122,6 +149,8 @@ jobs:
           push: false
           load: true
           tags: ${{ steps.image.outputs.image }}
+          build-args: |
+            JAR_FILE=${{ steps.image.outputs.jar_file }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
