@@ -133,8 +133,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: paquete-api
-          path: |
-            ${{ inputs.working_directory }}/target/paquete-api.jar
-            ${{ inputs.working_directory }}/build/libs/paquete-api.jar
+          path: ${{ inputs.working_directory }}/${{ inputs.build_tool == 'maven' && 'target' || 'build/libs' }}/paquete-api.jar
           if-no-files-found: error
           retention-days: 7
