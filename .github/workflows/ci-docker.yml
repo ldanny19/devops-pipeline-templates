@@ -115,8 +115,9 @@ jobs:
             exit 1
           fi
           if ! grep -Eq '^[[:space:]]*ARG[[:space:]]+JAR_FILE([=[:space:]]|$)' "$DOCKERFILE" ||
+             ! grep -Eq '^[[:space:]]*ARG[[:space:]]+JAR_FILE_NAME([=[:space:]]|$)' "$DOCKERFILE" ||
              ! grep -Eq '^[[:space:]]*COPY[[:space:]].*JAR_FILE' "$DOCKERFILE"; then
-            echo "::error::El Dockerfile debe declarar ARG JAR_FILE y utilizarlo en COPY para recibir el artefacto versionado."
+            echo "::error::El Dockerfile debe declarar ARG JAR_FILE y ARG JAR_FILE_NAME y utilizar JAR_FILE en COPY para conservar el nombre versionado."
             exit 1
           fi
 
@@ -135,6 +136,7 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "dockerfile=$DOCKERFILE" >> "$GITHUB_OUTPUT"
           echo "jar_file=$JAR_FILE" >> "$GITHUB_OUTPUT"
+          echo "jar_file_name=$ARTIFACT_FILE_NAME" >> "$GITHUB_OUTPUT"
           echo "Docker recibira el JAR original: $JAR_FILE"
 
       - name: Configurar Docker Buildx
@@ -151,6 +153,7 @@ jobs:
           tags: ${{ steps.image.outputs.image }}
           build-args: |
             JAR_FILE=${{ steps.image.outputs.jar_file }}
+            JAR_FILE_NAME=${{ steps.image.outputs.jar_file_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
