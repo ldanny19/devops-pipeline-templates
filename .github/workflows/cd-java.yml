@@ -1,0 +1,56 @@
+name: CD JAVA
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment de GitHub al que se desplegara'
+        required: true
+        type: string
+      docker_image:
+        description: 'Referencia completa de imagen, incluyendo tag'
+        required: true
+        type: string
+      deploy_path:
+        description: 'Directorio remoto que contiene compose.yaml'
+        required: true
+        type: string
+      ssh_port:
+        description: 'Puerto SSH del servidor'
+        required: false
+        type: number
+        default: 22
+    secrets:
+      SSH_PRIVATE_KEY:
+        required: true
+      SSH_HOST:
+        required: true
+      SSH_USER:
+        required: true
+      SSH_KNOWN_HOSTS:
+        required: true
+      GHCR_USERNAME:
+        required: true
+      GHCR_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: CD DEPLOY
+    uses: ldanny19/devops-pipeline-templates/.github/workflows/cd-deploy.yml@2f199c9ce6ef9b04e0e8f2c72f21f8d258e6cb69
+    with:
+      environment: ${{ inputs.environment }}
+      docker_image: ${{ inputs.docker_image }}
+      deploy_path: ${{ inputs.deploy_path }}
+      ssh_port: ${{ inputs.ssh_port }}
+    secrets:
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}

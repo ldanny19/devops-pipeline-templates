@@ -1,0 +1,97 @@
+name: CI JAVA TEST
+
+on:
+  workflow_call:
+    inputs:
+      java_version:
+        description: 'Version de Java'
+        required: true
+        type: string
+      java_distribution:
+        description: 'Distribucion de Java'
+        required: true
+        type: string
+      build_tool:
+        description: 'Herramienta de construccion: maven o gradle'
+        required: true
+        type: string
+      build_tool_version:
+        description: 'Version de Maven o Gradle'
+        required: true
+        type: string
+      working_directory:
+        description: 'Directorio del modulo Java'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Validacion y seguridad de dependencias
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ inputs.java_distribution }}
+          java-version: ${{ inputs.java_version }}
+          cache: ${{ inputs.build_tool }}
+
+      - name: Configurar Maven
+        if: ${{ inputs.build_tool == 'maven' }}
+        uses: stCarolas/setup-maven@v5.1
+        with:
+          maven-version: ${{ inputs.build_tool_version }}
+
+      - name: Configurar Gradle
+        if: ${{ inputs.build_tool == 'gradle' }}
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ inputs.build_tool_version }}
+
+      - name: Validar estructura del proyecto
+        shell: bash
+        env:
+          MODULE: ${{ inputs.working_directory }}
+          BUILD_TOOL: ${{ inputs.build_tool }}
+        run: |
+          set -euo pipefail
+          if [[ ! -d "$MODULE" ]]; then
+            echo "::error::No existe el directorio del modulo: $MODULE"
+            exit 1
+          fi
+          case "$BUILD_TOOL" in
+            maven)
+              [[ -f "$MODULE/pom.xml" ]] || {
+                echo "::error::No existe $MODULE/pom.xml"
+                exit 1
+              }
+              mvn --version
+              ;;
+            gradle)
+              [[ -f "$MODULE/build.gradle" || -f "$MODULE/build.gradle.kts" ]] || {
+                echo "::error::No existe el archivo de configuracion Gradle"
+                exit 1
+              }
+              gradle --version
+              ;;
+            *)
+              echo "::error::Herramienta no soportada: $BUILD_TOOL"
+              exit 1
+              ;;
+          esac
+
+      - name: Escanear dependencias con Trivy
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.working_directory }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'

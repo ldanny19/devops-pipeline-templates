@@ -139,7 +139,7 @@ jobs:
     name: CI JAVA BUILD
     if: ${{ inputs.execute_build }}
     needs: test
-    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-java-build.yml@1a5374cb6f0f26acde40ad41ac2e796334c881e4
+    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-java-build.yml@a2c593f430b3418950d81cad77e01bec0552cf93
     with:
       java_version: ${{ inputs.java_version }}
       java_distribution: ${{ inputs.java_distribution }}
