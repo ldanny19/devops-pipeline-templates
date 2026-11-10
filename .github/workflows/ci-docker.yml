@@ -23,6 +23,11 @@ on:
         description: 'Ruta original del JAR relativa al modulo'
         required: true
         type: string
+      artifact_name:
+        description: 'Nombre del artefacto Actions que contiene el JAR'
+        required: false
+        type: string
+        default: 'java-build-artifact'
       docker_context:
         description: 'Contexto de construccion relativo a la raiz del repositorio'
         required: false
@@ -60,7 +65,7 @@ jobs:
       - name: Descargar JAR original de CI JAVA BUILD
         uses: actions/download-artifact@v4
         with:
-          name: java-build-artifact
+          name: ${{ inputs.artifact_name }}
           path: ${{ inputs.working_directory }}/${{ inputs.artifact_directory }}
 
       - name: Validar contexto, Dockerfile y JAR

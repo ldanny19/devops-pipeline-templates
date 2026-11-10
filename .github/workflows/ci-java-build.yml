@@ -28,6 +28,28 @@ on:
         required: false
         type: boolean
         default: true
+      artifact_name:
+        description: 'Nombre unico del artefacto Actions publicado'
+        required: false
+        type: string
+        default: 'java-build-artifact'
+      dependency_artifact_name:
+        description: 'Artefacto Actions de una dependencia Maven local'
+        required: false
+        type: string
+        default: ''
+      dependency_group_id:
+        required: false
+        type: string
+        default: ''
+      dependency_artifact_id:
+        required: false
+        type: string
+        default: ''
+      dependency_version:
+        required: false
+        type: string
+        default: ''
     outputs:
       artifact_file_name:
         description: 'Nombre original del JAR generado por Maven o Gradle'
@@ -73,6 +95,39 @@ jobs:
         with:
           gradle-version: ${{ inputs.build_tool_version }}
 
+      - name: Descargar dependencia Maven del mismo workflow
+        if: ${{ inputs.build_tool == 'maven' && inputs.dependency_artifact_name != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.dependency_artifact_name }}
+          path: .ci-dependencies
+
+      - name: Instalar dependencia Maven local
+        if: ${{ inputs.build_tool == 'maven' && inputs.dependency_artifact_name != '' }}
+        shell: bash
+        env:
+          GROUP_ID: ${{ inputs.dependency_group_id }}
+          ARTIFACT_ID: ${{ inputs.dependency_artifact_id }}
+          VERSION: ${{ inputs.dependency_version }}
+        run: |
+          set -euo pipefail
+          JAR_FILE="$(find .ci-dependencies -maxdepth 2 -type f -name '*.jar' -print -quit)"
+          [[ -n "$JAR_FILE" && -s "$JAR_FILE" ]] || {
+            echo "::error::No se encontro el JAR de la dependencia descargada."
+            exit 1
+          }
+          [[ -n "$GROUP_ID" && -n "$ARTIFACT_ID" && -n "$VERSION" ]] || {
+            echo "::error::Faltan las coordenadas Maven de la dependencia local."
+            exit 1
+          }
+          mvn -B --no-transfer-progress install:install-file \
+            -Dfile="$JAR_FILE" \
+            -DgroupId="$GROUP_ID" \
+            -DartifactId="$ARTIFACT_ID" \
+            -Dversion="$VERSION" \
+            -Dpackaging=jar \
+            -DgeneratePom=true
+
       - name: Compilar y ejecutar pruebas
         working-directory: ${{ inputs.working_directory }}
         shell: bash
@@ -88,6 +143,45 @@ jobs:
               exit 1
               ;;
           esac
+
+      - name: Analizar calidad de código Java
+        if: ${{ inputs.build_tool == 'maven' }}
+        working-directory: ${{ inputs.working_directory }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mvn -B --no-transfer-progress \
+            org.apache.maven.plugins:maven-checkstyle-plugin:3.6.0:checkstyle \
+            org.apache.maven.plugins:maven-pmd-plugin:3.28.0:pmd \
+            com.github.spotbugs:spotbugs-maven-plugin:4.10.4.1:spotbugs
+
+      - name: Publicar reportes de seguridad y calidad
+        if: always() && inputs.build_tool == 'maven'
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-security-reports-${{ inputs.working_directory }}
+          path: |
+            ${{ inputs.working_directory }}/target/dependency-check-report.html
+            ${{ inputs.working_directory }}/target/dependency-check-report.json
+            ${{ inputs.working_directory }}/target/site/checkstyle.html
+            ${{ inputs.working_directory }}/target/site/pmd.html
+            ${{ inputs.working_directory }}/target/spotbugsXml.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Analizar vulnerabilidades de dependencias con OWASP Dependency-Check
+        if: ${{ inputs.build_tool == 'maven' }}
+        working-directory: ${{ inputs.working_directory }}
+        shell: bash
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          set -euo pipefail
+          mvn -B --no-transfer-progress \
+            org.owasp:dependency-check-maven:13.0.0:check \
+            -DfailBuildOnCVSS=7.0 \
+            -Dformats=HTML,JSON \
+            -DnvdApiKey="${NVD_API_KEY:-}"
 
       - name: Identificar JAR principal sin renombrarlo
         if: ${{ inputs.publish_artifact }}
@@ -154,7 +248,7 @@ jobs:
         if: ${{ inputs.publish_artifact }}
         uses: actions/upload-artifact@v4
         with:
-          name: java-build-artifact
+          name: ${{ inputs.artifact_name }}
           path: ${{ inputs.working_directory }}/${{ steps.artifact.outputs.artifact_path }}
           if-no-files-found: error
           retention-days: 7
