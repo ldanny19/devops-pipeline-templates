@@ -15,6 +15,10 @@ on:
         description: 'Directorio remoto que contiene compose.yaml'
         required: true
         type: string
+      compose_service:
+        description: 'Servicio exacto de Docker Compose que se debe desplegar'
+        required: true
+        type: string
       ssh_port:
         description: 'Puerto SSH del servidor'
         required: false
@@ -41,11 +45,12 @@ permissions:
 jobs:
   deploy:
     name: CD DEPLOY
-    uses: ldanny19/devops-pipeline-templates/.github/workflows/cd-deploy.yml@2f199c9ce6ef9b04e0e8f2c72f21f8d258e6cb69
+    uses: ldanny19/devops-pipeline-templates/.github/workflows/cd-deploy.yml@4ec03547fa9d02bfd0b8e1b2f580d2e0fed3f1ef
     with:
       environment: ${{ inputs.environment }}
       docker_image: ${{ inputs.docker_image }}
       deploy_path: ${{ inputs.deploy_path }}
+      compose_service: ${{ inputs.compose_service }}
       ssh_port: ${{ inputs.ssh_port }}
     secrets:
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
