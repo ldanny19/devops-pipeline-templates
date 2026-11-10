@@ -153,6 +153,7 @@ jobs:
       dependency_group_id: ${{ inputs.dependency_group_id }}
       dependency_artifact_id: ${{ inputs.dependency_artifact_id }}
       dependency_version: ${{ inputs.dependency_version }}
+    secrets: inherit
 
   docker:
     name: CI DOCKER
