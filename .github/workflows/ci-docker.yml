@@ -38,6 +38,11 @@ on:
         required: false
         type: string
         default: ''
+      artifact_name:
+        description: 'Nombre del artefacto Actions generado por BUILD'
+        required: false
+        type: string
+        default: 'java-build-artifact'
     outputs:
       image:
         description: 'Referencia completa de imagen publicada'
@@ -60,7 +65,7 @@ jobs:
       - name: Descargar JAR original de CI JAVA BUILD
         uses: actions/download-artifact@v4
         with:
-          name: java-build-artifact
+          name: ${{ inputs.artifact_name }}
           path: ${{ inputs.working_directory }}/${{ inputs.artifact_directory }}
 
       - name: Validar contexto, Dockerfile y JAR
