@@ -14,6 +14,10 @@ on:
         description: 'Directorio remoto que contiene compose.yaml'
         required: true
         type: string
+      compose_service:
+        description: 'Servicio exacto de Docker Compose que se debe desplegar'
+        required: true
+        type: string
       ssh_port:
         required: false
         type: number
@@ -84,6 +88,7 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PORT: ${{ inputs.ssh_port }}
           DEPLOY_PATH: ${{ inputs.deploy_path }}
+          COMPOSE_SERVICE: ${{ inputs.compose_service }}
           IMAGE: ${{ inputs.docker_image }}
         run: |
           set -euo pipefail
@@ -95,18 +100,24 @@ jobs:
             echo "::error::deploy_path debe ser una ruta absoluta segura."
             exit 1
           }
+          [[ "$COMPOSE_SERVICE" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] || {
+            echo "::error::compose_service debe ser un nombre de servicio Docker Compose valido."
+            exit 1
+          }
           printf -v REMOTE_PATH '%q' "$DEPLOY_PATH"
           printf -v REMOTE_IMAGE '%q' "$IMAGE"
+          printf -v REMOTE_SERVICE '%q' "$COMPOSE_SERVICE"
           ssh \
             -i "$HOME/.ssh/id_ed25519" \
             -p "$SSH_PORT" \
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             "$SSH_USER@$SSH_HOST" \
-            "bash -s -- $REMOTE_PATH $REMOTE_IMAGE" <<'REMOTE'
+            "bash -s -- $REMOTE_PATH $REMOTE_IMAGE $REMOTE_SERVICE" <<'REMOTE'
           set -euo pipefail
           DEPLOY_PATH="$1"
           IMAGE="$2"
+          COMPOSE_SERVICE="$3"
           [[ -d "$DEPLOY_PATH" ]] || {
             echo "No existe el directorio de despliegue: $DEPLOY_PATH"
             exit 1
@@ -118,13 +129,13 @@ jobs:
           }
           export IMAGE
           docker compose config --quiet
-          docker compose pull
-          docker compose up -d --no-build --remove-orphans
-          RUNNING_CONTAINERS="$(docker compose ps --status running --quiet)"
+          docker compose pull "$COMPOSE_SERVICE"
+          docker compose up -d --no-build --no-deps "$COMPOSE_SERVICE"
+          RUNNING_CONTAINERS="$(docker compose ps --status running --quiet "$COMPOSE_SERVICE")"
           [[ -n "$RUNNING_CONTAINERS" ]] || {
-            echo "No hay contenedores en estado running."
-            docker compose ps --all
+            echo "El servicio $COMPOSE_SERVICE no quedo en estado running."
+            docker compose ps --all "$COMPOSE_SERVICE"
             exit 1
           }
-          docker compose ps --all
+          docker compose ps --all "$COMPOSE_SERVICE"
           REMOTE
