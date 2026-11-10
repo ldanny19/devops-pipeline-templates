@@ -136,7 +136,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-docker.yml@1a5374cb6f0f26acde40ad41ac2e796334c881e4
+    uses: ldanny19/devops-pipeline-templates/.github/workflows/ci-docker.yml@e3dfc133e82233e7f3ad73de1063ee15eb0fc6ef
     with:
       working_directory: ${{ inputs.working_directory }}
       docker_image: ${{ inputs.docker_image }}
@@ -146,4 +146,5 @@ jobs:
       docker_context: ${{ inputs.docker_context }}
       dockerfile: ${{ inputs.dockerfile }}
       image_tag: ${{ inputs.image_tag }}
+      artifact_name: ${{ inputs.artifact_name }}
     secrets: inherit
